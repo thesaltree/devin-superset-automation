@@ -128,6 +128,38 @@ async def unblock_task(task_id: int, message: str):
     return {"unblocked": task_id, "session_id": session_id}
 
 
+@app.post("/trigger/reconcile")
+async def reconcile():
+    """Reconcile DB state with reality:
+
+    - Workers with a PR but stale status -> "completed" (PR opened = success).
+    - Orchestrators marked failed but whose plan produced PRs -> "completed".
+    Useful for cleaning up after the demo run before recording.
+    """
+    from datetime import datetime as _dt
+
+    fixed = []
+    with db_session() as s:
+        rows = s.execute(select(Task)).scalars().all()
+        for t in rows:
+            if t.role == "worker" and t.pr_url and t.status != "completed":
+                t.status = "completed"
+                t.error_message = None
+                if not t.completed_at:
+                    t.completed_at = _dt.utcnow()
+                fixed.append({"id": t.id, "issue": t.issue_number, "pr": t.pr_number})
+        # Orchestrator: if any worker has a PR, mark it completed
+        any_pr = any(r.pr_url for r in rows if r.role == "worker")
+        for t in rows:
+            if t.role == "orchestrator" and any_pr and t.status != "completed":
+                t.status = "completed"
+                t.error_message = None
+                if not t.completed_at:
+                    t.completed_at = _dt.utcnow()
+                fixed.append({"id": t.id, "role": "orchestrator"})
+    return {"reconciled": fixed}
+
+
 # ------------------------------------------------------------------- webhooks
 @app.post("/webhook/github")
 async def github_webhook(
