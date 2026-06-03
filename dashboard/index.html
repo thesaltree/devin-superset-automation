@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Devin Automation — Live</title>
+  <script src="https://unpkg.com/htmx.org@2.0.2"></script>
+  <style>
+    body { font-family: -apple-system, system-ui, sans-serif; margin: 0; background: #0f1115; color: #e6e6e6; }
+    header { padding: 18px 24px; border-bottom: 1px solid #222; display:flex; justify-content:space-between; align-items:center; }
+    h1 { font-size: 20px; margin: 0; }
+    main { padding: 24px; max-width: 1200px; margin: 0 auto; }
+    .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; }
+    .metric { background: #1a1d24; border: 1px solid #2a2f3a; border-radius: 8px; padding: 14px; }
+    .metric .label { font-size: 11px; color: #8b91a2; text-transform: uppercase; letter-spacing: .5px; }
+    .metric .value { font-size: 24px; font-weight: 600; margin-top: 6px; }
+    table { width: 100%; border-collapse: collapse; background: #1a1d24; border-radius: 8px; overflow: hidden; }
+    th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #2a2f3a; font-size: 13px; }
+    th { background: #14171d; color: #8b91a2; font-weight: 500; text-transform: uppercase; font-size: 11px; }
+    tr:last-child td { border-bottom: none; }
+    .pill { padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500; }
+    .pill.running { background: #1e3a5f; color: #6cb6ff; }
+    .pill.awaiting_ci { background: #4a3c0d; color: #f7c948; }
+    .pill.completed { background: #1f4a2c; color: #6cce8e; }
+    .pill.failed { background: #4a1f1f; color: #ff7373; }
+    .pill.queued { background: #333; color: #aaa; }
+    a { color: #6cb6ff; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .empty { padding: 40px; text-align: center; color: #8b91a2; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🤖 Devin Remediation Pipeline — Apache Superset</h1>
+    <span id="last-updated" style="color:#8b91a2;font-size:12px;">auto-refresh every 5s</span>
+  </header>
+  <main>
+    <div class="metrics" hx-get="/api/metrics" hx-trigger="load, every 5s" hx-swap="innerHTML"
+         hx-on::after-request="renderMetrics(event)"></div>
+
+    <div hx-get="/api/tasks" hx-trigger="load, every 5s" hx-swap="innerHTML"
+         hx-on::after-request="renderTasks(event)"></div>
+  </main>
+
+  <script>
+    function renderMetrics(ev) {
+      let m;
+      try { m = JSON.parse(ev.detail.xhr.responseText); } catch { return; }
+      const cells = [
+        ["Workers",     m.workers_total],
+        ["Completed",   m.workers_completed],
+        ["Running",     m.workers_running],
+        ["Failed",      m.workers_failed],
+        ["PRs Opened",  m.prs_opened],
+        ["Success %",   m.success_rate_pct + "%"],
+        ["Avg Duration", Math.round(m.avg_duration_seconds / 60) + "m"],
+        ["CI Retries",  m.ci_retries_total],
+      ];
+      ev.target.innerHTML = cells.map(([k,v]) =>
+        `<div class="metric"><div class="label">${k}</div><div class="value">${v}</div></div>`
+      ).join("");
+    }
+
+    function renderTasks(ev) {
+      let tasks;
+      try { tasks = JSON.parse(ev.detail.xhr.responseText); } catch { return; }
+      if (!tasks.length) {
+        ev.target.innerHTML = `<div class="empty">No tasks yet — POST /trigger/scan to start.</div>`;
+        return;
+      }
+      const rows = tasks.map(t => {
+        const issue = t.issue_number
+          ? `<a href="${t.issue_url}" target="_blank">#${t.issue_number}</a> ${escape(t.issue_title || "")}`
+          : `<em>orchestrator</em>`;
+        const pr = t.pr_url
+          ? `<a href="${t.pr_url}" target="_blank">PR #${t.pr_number}</a>`
+          : "—";
+        const session = t.session_url
+          ? `<a href="${t.session_url}" target="_blank">${t.session_id.slice(0,12)}…</a>`
+          : t.session_id.slice(0,12);
+        const dur = Math.round((t.duration_seconds || 0)/60) + "m";
+        return `<tr>
+          <td>${t.role}</td>
+          <td>${issue}</td>
+          <td><span class="pill ${t.status}">${t.status}</span></td>
+          <td>${pr}</td>
+          <td>${t.ci_retries}</td>
+          <td>${dur}</td>
+          <td>${session}</td>
+        </tr>`;
+      }).join("");
+      ev.target.innerHTML = `
+        <table>
+          <thead><tr>
+            <th>Role</th><th>Issue</th><th>Status</th><th>PR</th><th>CI Retries</th><th>Duration</th><th>Session</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+      document.getElementById("last-updated").textContent = "updated " + new Date().toLocaleTimeString();
+    }
+    function escape(s) { return s.replace(/[<>&"]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"}[c])); }
+  </script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+services:
+  webhook-server:
+    build: .
+    container_name: devin-automation
+    ports:
+      - "8080:8080"
+    environment:
+      - DEVIN_API_KEY=${DEVIN_API_KEY}
+      - DEVIN_API_BASE=${DEVIN_API_BASE:-https://api.devin.ai/v1}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GITHUB_REPO=${GITHUB_REPO}
+      - GITHUB_WEBHOOK_SECRET=${GITHUB_WEBHOOK_SECRET}
+      - DATABASE_URL=sqlite:////app/data/automation.db
+      - MAX_CONCURRENT_WORKERS=${MAX_CONCURRENT_WORKERS:-3}
+      - WORKER_LABEL=${WORKER_LABEL:-devin-task}
+    volumes:
+      - ./data:/app/data
+      - ./app:/app/app          # hot-reload during development
+      - ./dashboard:/app/dashboard
+    restart: unless-stopped
